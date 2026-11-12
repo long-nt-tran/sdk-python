@@ -166,6 +166,7 @@ def temporal_operation(
 def temporal_operation(
     *,
     name: str | None = None,
+    dynamic: bool = False,
 ) -> Callable[
     [TemporalOperationStartHandlerFunc[NexusServiceType, InputT, OutputT]],
     TemporalOperationStartHandlerFunc[NexusServiceType, InputT, OutputT],
@@ -177,6 +178,7 @@ def temporal_operation(
     | TemporalOperationStartHandlerFunc[NexusServiceType, InputT, OutputT] = None,
     *,
     name: str | None = None,
+    dynamic: bool = False,
 ) -> (
     TemporalOperationStartHandlerFunc[NexusServiceType, InputT, OutputT]
     | Callable[
@@ -186,9 +188,15 @@ def temporal_operation(
 ):
     """Decorator marking a method as the start method for an operation that interacts with Temporal.
 
+    Set dynamic=True for the service fallback. It cannot specify name and must
+    accept raw nexusrpc.LazyValue input. Named handlers take precedence.
+
     .. warning::
        This API is experimental and unstable.
     """
+
+    if dynamic and name is not None:
+        raise ValueError("A dynamic operation handler cannot specify name")
 
     def decorator(
         start: TemporalOperationStartHandlerFunc[NexusServiceType, InputT, OutputT],
@@ -231,9 +239,14 @@ def temporal_operation(
             _TemporalOperationHandler.start_operation.__doc__ = start.__doc__
             return _TemporalOperationHandler()
 
+        if dynamic and input_type not in (nexusrpc.LazyValue, nexusrpc.LazyValueT):
+            raise TypeError(
+                "A dynamic operation handler must accept nexusrpc.LazyValue"
+            )
         method_name = get_callable_name(start)
         op = nexusrpc.Operation(
-            name=name or method_name,
+            name="" if dynamic else name or method_name,
+            dynamic=dynamic,
             input_type=input_type,
             output_type=output_type,
         )

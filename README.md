@@ -2272,3 +2272,41 @@ poe format
     any `temporalio` packages (except `temporalio.types`) or any classes/functions that aren't clear when unqualified.
   * We allow relative imports for private packages
   * We allow `@staticmethod`
+
+### Dynamic Nexus operation handlers
+
+Add `@temporalio.nexus.temporal_operation(dynamic=True)` to one method in a service:
+
+```python
+@nexusrpc.handler.service_handler(name="weather")
+class WeatherTools:
+    @temporalio.nexus.temporal_operation(dynamic=True)
+    async def forward(
+        self,
+        ctx: temporalio.nexus.TemporalStartOperationContext,
+        client: temporalio.nexus.TemporalNexusClient,
+        input: nexusrpc.LazyValue,
+    ) -> temporalio.nexus.TemporalOperationResult[dict]:
+        arguments = await input.consume(as_type=dict)
+        return temporalio.nexus.TemporalOperationResult.sync(
+            {"operation": ctx.operation, "arguments": arguments}
+        )
+```
+
+Register `WeatherTools()` with the Worker's `nexus_service_handlers`, as usual.
+Named operations take precedence. Unmatched starts and cancellations reach the
+catch-all with the original operation name. Unknown services return `NOT_FOUND`.
+A dynamic handler cannot also specify `name`, and a service can have only one.
+
+The handler can return a sync result or start a Temporal-backed async operation.
+Workflow runs and standalone Activities reuse existing token-based cancellation;
+Workflow Updates need application-specific handling. Cancellation reads only the
+operation token, so it works after the application stops accepting that name.
+
+To reject a name, raise `nexusrpc.HandlerError` with type `NOT_FOUND`. That error
+is final; no other handler runs. Nexus inbound interceptors run for the catch-all
+and receive the unconsumed `nexusrpc.LazyValue` as `ExecuteNexusOperationStartInput.input`.
+
+This fork pins the Nexus RPC dependency to a Git commit in `pyproject.toml`.
+Replace that pin with an upstream release containing dynamic operation support
+before publishing the SDK.
